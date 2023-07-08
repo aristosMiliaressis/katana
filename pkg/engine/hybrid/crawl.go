@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/katana/pkg/engine/common"
@@ -35,12 +36,15 @@ func (c *Crawler) navigateRequest(s *common.CrawlSession, request *navigation.Re
 		return nil, errorutil.NewWithTag("hybrid", "could not create target").Wrap(err)
 	}
 	defer page.Close()
+	c.addHeadersToPage(page)
 
 	pageRouter := NewHijack(page)
 	pageRouter.SetPattern(&proto.FetchRequestPattern{
 		URLPattern:   "*",
 		RequestStage: proto.FetchRequestStageResponse,
 	})
+
+	xhrRequests := []navigation.Request{}
 	go pageRouter.Start(func(e *proto.FetchRequestPaused) error {
 		URL, _ := urlutil.Parse(e.Request.URL)
 		body, _ := FetchGetResponseBody(page, e)
@@ -61,6 +65,13 @@ func (c *Crawler) navigateRequest(s *common.CrawlSession, request *navigation.Re
 			statucCodeText = http.StatusText(statusCode)
 		}
 		httpreq, _ := http.NewRequest(e.Request.Method, URL.String(), strings.NewReader(e.Request.PostData))
+		// Note: headers are originally sent using `c.addHeadersToPage` below changes are done so that
+		// headers are reflected in request dump
+		if httpreq != nil {
+			for k, v := range c.Headers {
+				httpreq.Header.Set(k, v)
+			}
+		}
 		httpresp := &http.Response{
 			Proto:         "HTTP/1.1",
 			ProtoMajor:    1,
@@ -93,6 +104,16 @@ func (c *Crawler) navigateRequest(s *common.CrawlSession, request *navigation.Re
 			StatusCode:   statusCode,
 			Headers:      utils.FlattenHeaders(headers),
 			Raw:          string(rawBytesResponse),
+		}
+
+		if e.ResourceType == "XHR" && c.Options.Options.XhrExtraction {
+			xhr := navigation.Request{
+				URL:     httpreq.URL.String(),
+				Method:  httpreq.Method,
+				Headers: utils.FlattenHeaders(httpreq.Header),
+				Body:    e.Request.PostData,
+			}
+			xhrRequests = append(xhrRequests, xhr)
 		}
 
 		// trim trailing /
@@ -154,6 +175,10 @@ func (c *Crawler) navigateRequest(s *common.CrawlSession, request *navigation.Re
 	if err != nil {
 		return nil, errorutil.NewWithTag("hybrid", "url could not be parsed").Wrap(err)
 	}
+
+	if response.Resp == nil {
+		return nil, errorutil.NewWithTag("hybrid", "response is nil").Wrap(err)
+	}
 	response.Resp.Request.URL = parsed.URL
 
 	// Create a copy of intrapolated shadow DOM elements and parse them separately
@@ -167,12 +192,33 @@ func (c *Crawler) navigateRequest(s *common.CrawlSession, request *navigation.Re
 	}
 
 	response.Body = body
+	if c.Options.Options.FormExtraction {
+		response.Forms = append(response.Forms, utils.ParseFormFields(response.Reader)...)
+	}
 
 	response.Reader, err = goquery.NewDocumentFromReader(strings.NewReader(response.Body))
 	if err != nil {
 		return nil, errorutil.NewWithTag("hybrid", "could not parse html").Wrap(err)
 	}
+
+	response.XhrRequests = xhrRequests
+
 	return response, nil
+}
+
+func (c *Crawler) addHeadersToPage(page *rod.Page) {
+	if len(c.Headers) == 0 {
+		return
+	}
+	var arr []string
+	for k, v := range c.Headers {
+		arr = append(arr, k, v)
+	}
+	// ignore cleanup callback
+	_, err := page.SetExtraHeaders(arr)
+	if err != nil {
+		gologger.Error().Msgf("headless: could not set extra headers: %v", err)
+	}
 }
 
 // traverseDOMNode performs traversal of node completely building a pseudo-HTML

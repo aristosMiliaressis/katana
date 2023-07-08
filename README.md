@@ -125,9 +125,10 @@ CONFIGURATION:
    -mrs, -max-response-size int  maximum response size to read (default 9223372036854775807)
    -timeout int                  time to wait for request in seconds (default 10)
    -aff, -automatic-form-fill    enable automatic form filling (experimental)
+   -fx, -form-extraction        enable extraction of form, input, textarea & select elements
    -retry int                    number of times to retry the request (default 1)
    -proxy string                 http/socks5 proxy to use
-   -H, -headers string[]         custom header/cookie to include in request
+   -H, -headers string[]         custom header/cookie to include in all http request in header:value format (file)
    -config string                path to the katana configuration file
    -fc, -form-config string      path to custom form configuration file
    -flc, -field-config string    path to custom field configuration file
@@ -147,6 +148,7 @@ HEADLESS:
    -cdd, -chrome-data-dir string     path to store chrome browser data
    -scp, -system-chrome-path string  use specified chrome browser for headless crawling
    -noi, -no-incognito               start headless chrome without incognito mode
+   -xhr, -xhr-extraction             extract xhr requests
 
 SCOPE:
    -cs, -crawl-scope string[]       in scope url regex to be followed by crawler
@@ -178,7 +180,9 @@ OUTPUT:
    -o, -output string                file to write output to
    -sr, -store-response              store http requests/responses
    -srd, -store-response-dir string  store http requests/responses to custom directory
-   -j, -json                         write output in JSONL(ines) format
+   -or, -omit-raw                    omit raw requests/responses from jsonl output
+   -ob, -omit-body                   omit response body from jsonl output
+   -j, -jsonl                        write output in jsonl format
    -nc, -no-color                    disable output content coloring (ANSI escape codes)
    -silent                           display output only
    -v, -verbose                      display verbose output
@@ -307,6 +311,7 @@ HEADLESS:
    -cdd, -chrome-data-dir string     path to store chrome browser data
    -scp, -system-chrome-path string  use specified chrome browser for headless crawling
    -noi, -no-incognito               start headless chrome without incognito mode
+   -xhr, -xhr-extraction             extract xhr requests
 ```
 
 *`-no-sandbox`*
@@ -486,6 +491,38 @@ Automatic form filling is experimental feature.
 katana -u https://tesla.com -aff
 ```
 
+## Authenticated Crawling
+
+Authenticated crawling involves including custom headers or cookies in HTTP requests to access protected resources. These headers provide authentication or authorization information, allowing you to crawl authenticated content / endpoint. You can specify headers directly in the command line or provide them as a file with katana to perfrom authenticated crawling.
+
+> **Note**: User needs to be manually perform the authentication and export the session cookie / header to file to use with katana.
+
+*`-headers`*
+----
+
+Option to add a custom header or cookie to the request. 
+> Syntax of [headers](https://datatracker.ietf.org/doc/html/rfc7230#section-3.2) in the HTTP specification
+
+Here is an example of adding a cookie to the request:
+```
+katana -u https://tesla.com -H 'Cookie: usrsess=AmljNrESo'
+```
+
+It is also possible to supply headers or cookies as a file. For example:
+
+```
+$ cat cookie.txt
+
+Cookie: PHPSESSIONID=XXXXXXXXX
+X-API-KEY: XXXXX
+TOKEN=XX
+```
+
+```
+katana -u https://tesla.com -H cookie.txt
+```
+
+
 There are more options to configure when needed, here is all the config related CLI options - 
 
 ```console
@@ -501,6 +538,7 @@ CONFIGURATION:
    -mrs, -max-response-size int  maximum response size to read (default 9223372036854775807)
    -timeout int                  time to wait for request in seconds (default 10)
    -aff, -automatic-form-fill    enable automatic form filling (experimental)
+   -fx, -form-extraction         enable extraction of form, input, textarea & select elements
    -retry int                    number of times to retry the request (default 1)
    -proxy string                 http/socks5 proxy to use
    -H, -headers string[]         custom header/cookie to include in request
